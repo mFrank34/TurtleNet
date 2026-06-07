@@ -1,0 +1,14 @@
+{
+  "25": {
+    "worker_id": "25",
+    "worker_type": "turtle",
+    "last_seen": "2026-06-07T22:44:37.180927+00:00",
+    "ping_count": 37
+  },
+  "26": {
+    "worker_id": "26",
+    "worker_type": "turtle",
+    "last_seen": "2026-06-07T23:12:54.533722+00:00",
+    "ping_count": 19
+  }
+}
