@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel
+from services import worker_store
 
 router = APIRouter()
 
@@ -14,11 +15,14 @@ class Command(BaseModel):
 async def worker_ws(websocket: WebSocket, worker_id: str):
     await websocket.accept()
     connected_workers[worker_id] = websocket
+    worker_store.record_ping(worker_id, "turtle")
     print(f"[TurtleNet] Worker {worker_id} connected")
     try:
         while True:
             data = await websocket.receive_json()
             print(f"[TurtleNet] {worker_id} → {data}")
+            # update last_seen on every message including keepalives
+            worker_store.record_ping(worker_id, "turtle")
     except WebSocketDisconnect:
         print(f"[TurtleNet] Worker {worker_id} disconnected")
     finally:
