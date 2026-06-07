@@ -2,9 +2,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.schemas.node import NodeStatus
+from src.schemas.worker import Status
 
-STORE_PATH = Path("nodes.json")
+STORE_PATH = Path("data/nodes.json")
 
 
 def _load() -> dict:
@@ -19,7 +19,7 @@ def _save(data: dict) -> None:
         json.dump(data, f, indent=2, default=str)
 
 
-def record_ping(node_id: str, node_type: str) -> NodeStatus:
+def record_ping(node_id: str, node_type: str) -> Status:
     data = _load()
     node = data.get(node_id)
 
@@ -36,18 +36,18 @@ def record_ping(node_id: str, node_type: str) -> NodeStatus:
 
     data[node_id] = node
     _save(data)
-    return NodeStatus(**node)
+    return Status(**node)
 
 
-def get_all_nodes() -> list[NodeStatus]:
+def get_all_nodes() -> list[Status]:
     data = _load()
-    return [NodeStatus(**n) for n in data.values()]
+    return [Status(**n) for n in data.values()]
 
 
-def get_node(node_id: str) -> NodeStatus | None:
+def get_node(node_id: str) -> Status | None:
     data = _load()
     node = data.get(node_id)
-    return NodeStatus(**node) if node else None
+    return Status(**node) if node else None
 
 
 def delete_node(node_id: str) -> bool:

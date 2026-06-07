@@ -8,7 +8,7 @@ class PingRequest(BaseModel):
     node_type: str
 
 
-class NodeStatus(BaseModel):
+class Status(BaseModel):
     node_id: str
     node_type: str
     last_seen: datetime
