@@ -13,22 +13,22 @@ def ping(payload: PingRequest):
 
 
 @router.get("/", response_model=list[Status])
-def list_nodes():
-    """List all known worker nodes."""
-    return worker_store.get_all_nodes()
+def list_workers():
+    """List all known workers."""
+    return worker_store.get_all_workers()
 
 
-@router.get("/{node_id}", response_model=Status)
-def get_node(node_id: str):
-    """Get status of a specific node."""
-    node = worker_store.get_node(node_id)
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
-    return node
+@router.get("/{worker_id}", response_model=Status)
+def get_worker(worker_id: str):
+    """Get status of a specific worker."""
+    worker = worker_store.get_worker(worker_id)
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    return worker
 
 
-@router.delete("/{node_id}", status_code=204)
-def remove_node(node_id: str):
-    """Remove a node from the store."""
-    if not worker_store.delete_node(node_id):
-        raise HTTPException(status_code=404, detail="Node not found")
+@router.delete("/{worker_id}", status_code=204)
+def delete_worker(worker_id: str):
+    """Remove a worker from the store."""
+    if not worker_store.delete_worker(worker_id):
+        raise HTTPException(status_code=404, detail="Worker not found")
