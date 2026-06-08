@@ -37,6 +37,7 @@ jobs:
             echo "Running new container..."
             podman run -d \
               --name turtlenet \
+              --pod pod_turtlenet \
               -p 8000:8000 \
               --restart=always \
               -v ~/projects/TurtleNet/data:/app/data:z \
