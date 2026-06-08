@@ -1,16 +1,12 @@
 import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel
 
+from schemas.worker import Command
 from services import worker_store
 
 router = APIRouter()
 connected_workers: dict[str, WebSocket] = {}
-
-
-class Command(BaseModel):
-    command: str
 
 
 @router.websocket("/ws/{worker_id}")
@@ -34,7 +30,12 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
         while True:
             data = await websocket.receive_json()
             print(f"[TurtleNet] {worker_id} → {data}")
-            worker_store.record_ping(worker_id, "turtle")
+            worker_store.record_ping(
+                worker_id,
+                "turtle",
+                fuel=data.get("fuel"),
+                inventory=data.get("inventory"),
+            )
     except WebSocketDisconnect:
         print(f"[TurtleNet] Worker {worker_id} disconnected")
     finally:
@@ -46,5 +47,5 @@ async def command_worker(worker_id: str, payload: Command):
     ws = connected_workers.get(worker_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Worker not connected")
-    await ws.send_json({"command": payload.command})
+    await ws.send_json({"command": payload.command, "slot": payload.slot})
     return {"sent": True}

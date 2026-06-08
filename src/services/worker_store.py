@@ -20,19 +20,23 @@ def _save(data: dict) -> None:
         json.dump(data, f, indent=2, default=str)
 
 
-def record_ping(worker_id: str, worker_type: str) -> Status:
+def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: dict = None) -> Status:
     data = _load()
     worker = data.get(worker_id)
 
     if worker:
         worker["last_seen"] = datetime.now(timezone.utc).isoformat()
         worker["ping_count"] += 1
+        if fuel is not None: worker["fuel"] = fuel
+        if inventory is not None: worker["inventory"] = inventory
     else:
         worker = {
             "worker_id": worker_id,
             "worker_type": worker_type,
             "last_seen": datetime.now(timezone.utc).isoformat(),
             "ping_count": 1,
+            "fuel": fuel,
+            "inventory": inventory,
         }
 
     data[worker_id] = worker
