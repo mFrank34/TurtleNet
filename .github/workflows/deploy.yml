@@ -18,10 +18,13 @@ jobs:
           port: ${{ secrets.SERVER_SSH_PORT }}
           script: |
             set -e
-            cd ~/projects/TurtleNet
-            git pull origin main
 
-            echo "Stopping and removing old container..."
+            cd ~/projects/TurtleNet
+
+            echo "Pulling latest deploy branch..."
+            git pull origin deploy
+
+            echo "Stopping old container..."
             podman stop turtlenet || true
             podman rm turtlenet || true
 
