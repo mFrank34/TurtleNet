@@ -1,7 +1,7 @@
 local CONFIG = {
-	host = "192.168.10.5:8000",
-	node_id = os.getComputerLabel() or tostring(os.getComputerID()),
-	node_type = "turtle",
+    host      = "192.167.10.2:8000",
+    node_id   = os.getComputerLabel() or tostring(os.getComputerID()),
+    node_type = "turtle",
 }
 
 local function wait_for_server()

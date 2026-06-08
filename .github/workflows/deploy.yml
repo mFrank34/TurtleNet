@@ -35,7 +35,7 @@ jobs:
             podman build --no-cache -t turtlenet-server .
 
             echo "Setting up pod..."
-            podman pod exists pod_turtlenet || podman pod create --name pod_turtlenet -p 8000:8000
+            podman pod exists pod_turtlenet || podman pod create --name pod_turtlenet --network=host
             
             echo "Running new container..."
             podman run -d \
