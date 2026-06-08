@@ -37,9 +37,9 @@ jobs:
             echo "Setting up pod..."
             podman pod exists pod_turtlenet || podman pod create --name pod_turtlenet --network=host
             
-            echo "Running new container..."
             podman run -d \
               --name turtlenet \
-              --pod pod_turtlenet \
+              --network turtlenet \
+              -p 8000:8000 \
               -v ~/projects/TurtleNet/data:/app/data:z \
               turtlenet-server
