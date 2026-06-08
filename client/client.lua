@@ -57,17 +57,18 @@ local function run()
         local ws = connect()
         if ws then
             while true do
-                -- timeout of 30s so we can send keepalive
                 local msg = ws.receive(30)
                 if not msg then
-                    -- no message received, send a ping to keep alive
+                    -- no message, send keepalive
                     ws.send(textutils.serialiseJSON({
                         status = "ping",
                         fuel   = turtle.getFuelLevel(),
                     }))
                 else
                     local data = textutils.unserialiseJSON(msg)
-                    if data and data.command then
+                    if data and data.type == "ping" then
+                        -- ignore server keepalive
+                    elseif data and data.command then
                         print("[TurtleNet] Command: " .. data.command)
                         local ok = handle_command(data.command)
                         ws.send(textutils.serialiseJSON({
