@@ -2,7 +2,7 @@ name: Deploy (Podman)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ deploy ]
 
 jobs:
   deploy:
@@ -15,24 +15,26 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT }}
           script: |
             set -e
-            cd Services/TurtleNet
+            cd ~/projects/TurtleNet
             git pull origin main
 
             echo "Stopping and removing old container..."
-            podman stop diggynet || true
-            podman rm diggynet || true
+            podman stop turtlenet || true
+            podman rm turtlenet || true
 
             echo "Removing old image..."
-            podman rmi diggynet-server || true
+            podman rmi turtlenet-server || true
 
             echo "Building fresh image..."
-            podman build --no-cache -t diggynet-server .
+            podman build --no-cache -t turtlenet-server .
 
             echo "Running new container..."
             podman run -d \
-              --name diggynet \
+              --name turtlenet \
               -p 8000:8000 \
               --restart=always \
-              diggynet-server
+              -v ~/projects/TurtleNet/data:/app/data:z \
+              turtlenet-server

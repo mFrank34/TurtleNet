@@ -8,7 +8,19 @@
   "26": {
     "worker_id": "26",
     "worker_type": "turtle",
-    "last_seen": "2026-06-07T23:12:54.533722+00:00",
-    "ping_count": 19
+    "last_seen": "2026-06-08T07:37:19.728945+00:00",
+    "ping_count": 127
+  },
+  "0": {
+    "worker_id": "0",
+    "worker_type": "turtle",
+    "last_seen": "2026-06-08T18:55:32.865711+00:00",
+    "ping_count": 29
+  },
+  "1": {
+    "worker_id": "1",
+    "worker_type": "turtle",
+    "last_seen": "2026-06-08T19:03:50.069092+00:00",
+    "ping_count": 48
   }
 }
