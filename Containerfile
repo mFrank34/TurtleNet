@@ -9,5 +9,4 @@ COPY . .
 
 EXPOSE 8000
 
-# Use Uvicorn to run FastAPI
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

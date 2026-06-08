@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from api.v1.endpoints import worker_ws
+from src.api.v1.endpoints import worker_ws
 
 router = APIRouter()
 
