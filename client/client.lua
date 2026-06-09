@@ -155,22 +155,28 @@ local function run()
                     local data = textutils.unserialiseJSON(msg)
 
                     if data then
+                        -- Reply to ping instead of ignoring it
                         if data.type == "ping" then
-                            -- ignore keepalive
+                            ws.send(textutils.serialiseJSON({
+                                status    = "ok",
+                                fuel      = turtle.getFuelLevel(),
+                                inventory = get_inventory(),
+                            }))
                         elseif data.command then
                             print("[TurtleNet] Command: " .. data.command)
                             local result = handle_command(data)
 
+                            -- FIXED: Safely process inspect data as a clean dictionary
                             local inspect_data = nil
                             if data.command == "inspect" then
-                                local _, block = turtle.inspect()
-                                inspect_data = block
+                                local success, block = turtle.inspect()
+                                inspect_data = success and block or { error = block }
                             elseif data.command == "inspect_up" then
-                                local _, block = turtle.inspectUp()
-                                inspect_data = block
+                                local success, block = turtle.inspectUp()
+                                inspect_data = success and block or { error = block }
                             elseif data.command == "inspect_down" then
-                                local _, block = turtle.inspectDown()
-                                inspect_data = block
+                                local success, block = turtle.inspectDown()
+                                inspect_data = success and block or { error = block }
                             end
 
                             ws.send(textutils.serialiseJSON({

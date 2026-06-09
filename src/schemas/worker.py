@@ -20,4 +20,4 @@ class Status(BaseModel):
     ping_count: int
     fuel: int | None = None
     inventory: dict | None = None
-    block: dict | None = None
+    block: dict | str | None = None
