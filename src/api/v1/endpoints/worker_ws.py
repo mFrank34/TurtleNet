@@ -49,3 +49,11 @@ async def command_worker(worker_id: str, payload: Command):
         raise HTTPException(status_code=404, detail="Worker not connected")
     await ws.send_json({"command": payload.command, "slot": payload.slot})
     return {"sent": True}
+
+
+@router.get("/{worker_id}/inventory")
+def get_inventory(worker_id: str):
+    worker = worker_store.get_worker(worker_id)
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    return worker.inventory
