@@ -16,7 +16,9 @@ pending_responses: dict[str, tuple[asyncio.Event, dict]] = {}
 async def worker_ws(websocket: WebSocket, worker_id: str):
     await websocket.accept()
     connected_workers[worker_id] = websocket
-    worker_store.record_ping(worker_id, "turtle")
+
+    # Use explicit keyword arguments to bypass signature order issues
+    worker_store.record_ping(worker_id=worker_id, worker_type="turtle")
     print(f"[TurtleNet] Worker {worker_id} connected")
 
     # Background keepalive task to ping the turtle every 30 seconds
