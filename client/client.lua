@@ -40,7 +40,6 @@ local function connect()
         return nil
     end
     print("[TurtleNet] Connected as " .. CONFIG.node_id)
-    -- send initial status on connect
     ws.send(textutils.serialiseJSON({
         status    = "connected",
         fuel      = turtle.getFuelLevel(),
@@ -52,6 +51,7 @@ end
 local function handle_command(data)
     local cmd = data.command
 
+    -- Movement
     if cmd == "move_forward" then
         return turtle.forward()
     elseif cmd == "move_back" then
@@ -64,8 +64,57 @@ local function handle_command(data)
         return turtle.turnLeft()
     elseif cmd == "turn_right" then
         return turtle.turnRight()
+
+    -- Mining
     elseif cmd == "dig" then
         return turtle.dig()
+    elseif cmd == "dig_up" then
+        return turtle.digUp()
+    elseif cmd == "dig_down" then
+        return turtle.digDown()
+
+    -- Suck
+    elseif cmd == "suck" then
+        return turtle.suck()
+    elseif cmd == "suck_up" then
+        return turtle.suckUp()
+    elseif cmd == "suck_down" then
+        return turtle.suckDown()
+
+    -- Drop
+    elseif cmd == "drop" then
+        return turtle.drop(data.count or 64)
+    elseif cmd == "drop_up" then
+        return turtle.dropUp(data.count or 64)
+    elseif cmd == "drop_down" then
+        return turtle.dropDown(data.count or 64)
+
+    -- Equip
+    elseif cmd == "equip_left" then
+        return turtle.equipLeft()
+    elseif cmd == "equip_right" then
+        return turtle.equipRight()
+
+    -- Inspect
+    elseif cmd == "inspect" then
+        local ok, _ = turtle.inspect()
+        return ok
+    elseif cmd == "inspect_up" then
+        local ok, _ = turtle.inspectUp()
+        return ok
+    elseif cmd == "inspect_down" then
+        local ok, _ = turtle.inspectDown()
+        return ok
+
+    -- Place
+    elseif cmd == "place" then
+        return turtle.place()
+    elseif cmd == "place_up" then
+        return turtle.placeUp()
+    elseif cmd == "place_down" then
+        return turtle.placeDown()
+
+    -- Inventory
     elseif cmd == "select_slot" then
         local slot = data.slot
         if slot and slot >= 1 and slot <= 16 then
@@ -108,11 +157,25 @@ local function run()
                         elseif data.command then
                             print("[TurtleNet] Command: " .. data.command)
                             local result = handle_command(data)
+
+                            local inspect_data = nil
+                            if data.command == "inspect" then
+                                local _, block = turtle.inspect()
+                                inspect_data = block
+                            elseif data.command == "inspect_up" then
+                                local _, block = turtle.inspectUp()
+                                inspect_data = block
+                            elseif data.command == "inspect_down" then
+                                local _, block = turtle.inspectDown()
+                                inspect_data = block
+                            end
+
                             ws.send(textutils.serialiseJSON({
                                 status    = result and "ok" or "failed",
                                 command   = data.command,
                                 fuel      = turtle.getFuelLevel(),
                                 inventory = get_inventory(),
+                                block     = inspect_data,
                             }))
                         end
                     end

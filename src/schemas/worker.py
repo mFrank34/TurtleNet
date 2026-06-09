@@ -1,5 +1,4 @@
 from datetime import datetime
-
 from pydantic import BaseModel
 
 
@@ -11,6 +10,7 @@ class PingRequest(BaseModel):
 class Command(BaseModel):
     command: str
     slot: int | None = None
+    count: int | None = None
 
 
 class Status(BaseModel):
@@ -20,3 +20,4 @@ class Status(BaseModel):
     ping_count: int
     fuel: int | None = None
     inventory: dict | None = None
+    block: dict | None = None

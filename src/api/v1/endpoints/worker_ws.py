@@ -35,6 +35,7 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
                 "turtle",
                 fuel=data.get("fuel"),
                 inventory=data.get("inventory"),
+                block=data.get("block"),
             )
     except WebSocketDisconnect:
         print(f"[TurtleNet] Worker {worker_id} disconnected")
@@ -47,7 +48,11 @@ async def command_worker(worker_id: str, payload: Command):
     ws = connected_workers.get(worker_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Worker not connected")
-    await ws.send_json({"command": payload.command, "slot": payload.slot})
+    await ws.send_json({
+        "command": payload.command,
+        "slot": payload.slot,
+        "count": payload.count,
+    })
     return {"sent": True}
 
 
