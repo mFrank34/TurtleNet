@@ -10,6 +10,7 @@ local function wait_for_server()
         if ok then
             ok.close()
             print("[TurtleNet] Server is up, connecting...")
+            sleep(0.1) -- Yield briefly to allow the HTTP resource wrapper to cleanly free up
             return
         end
         print("[TurtleNet] Server unavailable, retrying in 5s...")
@@ -40,11 +41,22 @@ local function connect()
         return nil
     end
     print("[TurtleNet] Connected as " .. CONFIG.node_id)
-    ws.send(textutils.serialiseJSON({
-        status    = "connected",
-        fuel      = turtle.getFuelLevel(),
-        inventory = get_inventory(),
-    }))
+
+    -- Protective encapsulation to prevent using a closed socket connection
+    local success, send_err = pcall(function()
+        ws.send(textutils.serialiseJSON({
+            status    = "connected",
+            fuel      = turtle.getFuelLevel(),
+            inventory = get_inventory(),
+        }))
+    end)
+
+    if not success then
+        print("[TurtleNet] Handshake transmission failed: " .. tostring(send_err))
+        pcall(ws.close)
+        return nil
+    end
+
     return ws
 end
 
