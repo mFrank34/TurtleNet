@@ -20,9 +20,10 @@ def _save(data: dict) -> None:
         json.dump(data, f, indent=2, default=str)
 
 
-def record_ping(self, worker_id: str, worker_type: str, fuel: int = None, inventory: dict = None, block: dict = None,
+# FIXED: Removed 'self' and swapped internal calls to match _load() and _save()
+def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: dict = None, block: dict = None,
                 peripherals: dict = None):
-    workers = self._load_workers()
+    workers = _load()  # FIXED: matches function name above
     worker = workers.get(worker_id)
 
     if worker:
@@ -31,7 +32,7 @@ def record_ping(self, worker_id: str, worker_type: str, fuel: int = None, invent
         if fuel is not None: worker["fuel"] = fuel
         if inventory is not None: worker["inventory"] = inventory
         if block is not None: worker["block"] = block
-        if peripherals is not None: worker["peripherals"] = peripherals  # <-- ADD THIS LINE
+        if peripherals is not None: worker["peripherals"] = peripherals
     else:
         worker = {
             "worker_id": worker_id,
@@ -41,11 +42,11 @@ def record_ping(self, worker_id: str, worker_type: str, fuel: int = None, invent
             "fuel": fuel,
             "inventory": inventory or {},
             "block": block,
-            "peripherals": peripherals or {},  # <-- ADD THIS LINE
+            "peripherals": peripherals or {},
         }
         workers[worker_id] = worker
 
-    self._save_workers(workers)
+    _save(workers)  # FIXED: matches function name above
     return Status(**worker)
 
 

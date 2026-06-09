@@ -34,13 +34,12 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
             data = await websocket.receive_json()
             print(f"[TurtleNet] {worker_id} → {data}")
 
-            # Safe execution wrapper for the database store layer
+            # Inside your websocket receive loop:
+            print(f"[TurtleNet] {worker_id} → {data}")
+
             try:
-                # If record_ping requires 'self', we initialize it on the fly: worker_store().record_ping(...)
-                # If it's a class module helper, we use named parameters.
-                # To prevent 'self' crash completely, we'll try instantiating it.
-                store_instance = worker_store() if isinstance(worker_store, type) else worker_store
-                store_instance.record_ping(
+                # Directly call the module function cleanly!
+                worker_store.record_ping(
                     worker_id=worker_id,
                     worker_type="turtle",
                     fuel=data.get("fuel"),
