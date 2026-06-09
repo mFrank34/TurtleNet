@@ -44,14 +44,16 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
 
 
 @router.post("/{worker_id}/command")
-async def command_worker(worker_id: str, payload: Command):
+async def command_worker(worker_id: str, payload: dict):  # Changed 'Command' to 'dict'
     ws = connected_workers.get(worker_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Worker not connected")
+
+    # Read straight from the raw dictionary data
     await ws.send_json({
-        "command": payload.command,
-        "slot": payload.slot,
-        "count": payload.count,
+        "command": payload.get("command"),
+        "slot": payload.get("slot"),
+        "count": payload.get("count"),
     })
     return {"sent": True}
 

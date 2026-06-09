@@ -81,13 +81,16 @@ local function handle_command(data)
     elseif cmd == "suck_down" then
         return turtle.suckDown()
 
-    -- Drop
+    -- Drop (Fixed with tonumber)
     elseif cmd == "drop" then
-        return turtle.drop(data.count or 64)
+        local drop_count = tonumber(data.count) or 64
+        return turtle.drop(drop_count)
     elseif cmd == "drop_up" then
-        return turtle.dropUp(data.count or 64)
+        local drop_count = tonumber(data.count) or 64
+        return turtle.dropUp(drop_count)
     elseif cmd == "drop_down" then
-        return turtle.dropDown(data.count or 64)
+        local drop_count = tonumber(data.count) or 64
+        return turtle.dropDown(drop_count)
 
     -- Equip
     elseif cmd == "equip_left" then
@@ -114,13 +117,13 @@ local function handle_command(data)
     elseif cmd == "place_down" then
         return turtle.placeDown()
 
-    -- Inventory
+    -- Inventory (Fixed slot with tonumber)
     elseif cmd == "select_slot" then
-        local slot = data.slot
+        local slot = tonumber(data.slot)
         if slot and slot >= 1 and slot <= 16 then
             return turtle.select(slot)
         else
-            print("[TurtleNet] Invalid slot: " .. tostring(slot))
+            print("[TurtleNet] Invalid slot: " .. tostring(data.slot))
             return false
         end
     elseif cmd == "refuel" then
