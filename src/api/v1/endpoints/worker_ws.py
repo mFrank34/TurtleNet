@@ -17,7 +17,7 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
     await websocket.accept()
     connected_workers[worker_id] = websocket
 
-    # Use explicit keyword arguments to bypass signature order issues
+    # 1. FIXED: Explicit keyword arguments so it passes correctly to the classmethod/store
     worker_store.record_ping(worker_id=worker_id, worker_type="turtle")
     print(f"[TurtleNet] Worker {worker_id} connected")
 
@@ -32,20 +32,19 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
 
     asyncio.create_task(keepalive())
 
-    # --- THIS IS THE EXACT LOOP YOU ARE LOOKING FOR ---
     try:
         while True:
             data = await websocket.receive_json()
             print(f"[TurtleNet] {worker_id} → {data}")
 
-            # Record state including the new peripherals key
+            # 2. FIXED: Turned these into named keyword arguments as well to eliminate the 'self' / parameter sorting error
             worker_store.record_ping(
-                worker_id,
-                "turtle",
+                worker_id=worker_id,
+                worker_type="turtle",
                 fuel=data.get("fuel"),
                 inventory=data.get("inventory"),
                 block=data.get("block"),
-                peripherals=data.get("peripherals"),  # <-- Integrated here
+                peripherals=data.get("peripherals"),
             )
 
             # Resolve any waiting HTTP POST command threads
@@ -86,7 +85,7 @@ async def command_worker(worker_id: str, payload: Command):
             "command": response_data.get("command"),
             "fuel": response_data.get("fuel"),
             "block": response_data.get("block"),
-            "peripherals": response_data.get("peripherals")  # Returns it dynamically here!
+            "peripherals": response_data.get("peripherals")
         }
 
     except asyncio.TimeoutError:
@@ -96,21 +95,18 @@ async def command_worker(worker_id: str, payload: Command):
 
 
 @router.get("/{worker_id}/inventory")
-async def get_inventory(worker_id: str):  # Made async to handle the event wait
+async def get_inventory(worker_id: str):
     ws = connected_workers.get(worker_id)
 
-    # Fallback: If the turtle is offline, give them the last known saved inventory
     if not ws:
         worker = worker_store.get_worker(worker_id)
         if not worker:
             raise HTTPException(status_code=404, detail="Worker not found")
         return {"source": "cache_offline", "inventory": worker.inventory}
 
-    # If the turtle IS online, force a real-time live scan!
     event = asyncio.Event()
     pending_responses[worker_id] = (event, {})
 
-    # Send the scan command down the websocket pipeline
     await ws.send_json({
         "command": "scan_inventory",
         "slot": None,
@@ -118,7 +114,6 @@ async def get_inventory(worker_id: str):  # Made async to handle the event wait
     })
 
     try:
-        # Wait up to 5 seconds for the turtle to run get_inventory() and send it back
         await asyncio.wait_for(event.wait(), timeout=5.0)
         _, response_data = pending_responses[worker_id]
 
@@ -127,7 +122,6 @@ async def get_inventory(worker_id: str):  # Made async to handle the event wait
             "inventory": response_data.get("inventory")
         }
     except asyncio.TimeoutError:
-        # If it times out, gracefully fall back to the last known database file state
         worker = worker_store.get_worker(worker_id)
         return {"source": "cache_timeout", "inventory": worker.inventory if worker else {}}
     finally:
