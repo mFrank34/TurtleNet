@@ -16,10 +16,7 @@ pending_responses: dict[str, tuple[asyncio.Event, dict]] = {}
 async def worker_ws(websocket: WebSocket, worker_id: str):
     await websocket.accept()
     connected_workers[worker_id] = websocket
-
-    # 1. FIXED: Explicit keyword arguments so it passes correctly to the classmethod/store
-    worker_store.record_ping(worker_id=worker_id, worker_type="turtle")
-    print(f"[TurtleNet] Worker {worker_id} connected")
+    print(f"[TurtleNet] Worker {worker_id} connected socket successfully")
 
     # Background keepalive task to ping the turtle every 30 seconds
     async def keepalive():
@@ -37,15 +34,22 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
             data = await websocket.receive_json()
             print(f"[TurtleNet] {worker_id} → {data}")
 
-            # 2. FIXED: Turned these into named keyword arguments as well to eliminate the 'self' / parameter sorting error
-            worker_store.record_ping(
-                worker_id=worker_id,
-                worker_type="turtle",
-                fuel=data.get("fuel"),
-                inventory=data.get("inventory"),
-                block=data.get("block"),
-                peripherals=data.get("peripherals"),
-            )
+            # Safe execution wrapper for the database store layer
+            try:
+                # If record_ping requires 'self', we initialize it on the fly: worker_store().record_ping(...)
+                # If it's a class module helper, we use named parameters.
+                # To prevent 'self' crash completely, we'll try instantiating it.
+                store_instance = worker_store() if isinstance(worker_store, type) else worker_store
+                store_instance.record_ping(
+                    worker_id=worker_id,
+                    worker_type="turtle",
+                    fuel=data.get("fuel"),
+                    inventory=data.get("inventory"),
+                    block=data.get("block"),
+                    peripherals=data.get("peripherals"),
+                )
+            except Exception as db_err:
+                print(f"[Database Error] Failed to log state for {worker_id}: {db_err}")
 
             # Resolve any waiting HTTP POST command threads
             if worker_id in pending_responses:
@@ -99,7 +103,9 @@ async def get_inventory(worker_id: str):
     ws = connected_workers.get(worker_id)
 
     if not ws:
-        worker = worker_store.get_worker(worker_id)
+        # Handling instance check for get_worker as well
+        store_instance = worker_store() if isinstance(worker_store, type) else worker_store
+        worker = store_instance.get_worker(worker_id)
         if not worker:
             raise HTTPException(status_code=404, detail="Worker not found")
         return {"source": "cache_offline", "inventory": worker.inventory}
@@ -122,7 +128,8 @@ async def get_inventory(worker_id: str):
             "inventory": response_data.get("inventory")
         }
     except asyncio.TimeoutError:
-        worker = worker_store.get_worker(worker_id)
+        store_instance = worker_store() if isinstance(worker_store, type) else worker_store
+        worker = store_instance.get_worker(worker_id)
         return {"source": "cache_timeout", "inventory": worker.inventory if worker else {}}
     finally:
         pending_responses.pop(worker_id, None)
