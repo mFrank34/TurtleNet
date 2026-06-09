@@ -19,6 +19,7 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
     worker_store.record_ping(worker_id, "turtle")
     print(f"[TurtleNet] Worker {worker_id} connected")
 
+    # Background keepalive task to ping the turtle every 30 seconds
     async def keepalive():
         while True:
             await asyncio.sleep(30)
@@ -29,25 +30,27 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
 
     asyncio.create_task(keepalive())
 
+    # --- THIS IS THE EXACT LOOP YOU ARE LOOKING FOR ---
     try:
         while True:
             data = await websocket.receive_json()
             print(f"[TurtleNet] {worker_id} → {data}")
 
-            # Save the ping state as usual
+            # Record state including the new peripherals key
             worker_store.record_ping(
                 worker_id,
                 "turtle",
                 fuel=data.get("fuel"),
                 inventory=data.get("inventory"),
                 block=data.get("block"),
+                peripherals=data.get("peripherals"),  # <-- Integrated here
             )
 
-            # NEW: If an HTTP request is waiting for this turtle's answer, give it the data
-            if worker_id in pending_responses and "command" in data:
+            # Resolve any waiting HTTP POST command threads
+            if worker_id in pending_responses:
                 event, _ = pending_responses[worker_id]
-                pending_responses[worker_id] = (event, data)  # Store the actual reply packet
-                event.set()  # Wake up the HTTP endpoint thread
+                pending_responses[worker_id] = (event, data)
+                event.set()
 
     except WebSocketDisconnect:
         print(f"[TurtleNet] Worker {worker_id} disconnected")
@@ -62,11 +65,9 @@ async def command_worker(worker_id: str, payload: Command):
     if not ws:
         raise HTTPException(status_code=404, detail="Worker not connected")
 
-    # Create an event tracker for this specific command round-trip
     event = asyncio.Event()
     pending_responses[worker_id] = (event, {})
 
-    # Forward command to turtle
     await ws.send_json({
         "command": payload.command,
         "slot": payload.slot,
@@ -74,23 +75,21 @@ async def command_worker(worker_id: str, payload: Command):
     })
 
     try:
-        # Wait up to 5 seconds for the turtle to execute it and respond over the WS loop
         await asyncio.wait_for(event.wait(), timeout=5.0)
         _, response_data = pending_responses[worker_id]
 
-        # Return the actual feedback from the turtle back to your curl client
         return {
             "sent": True,
             "status": response_data.get("status"),
             "command": response_data.get("command"),
+            "fuel": response_data.get("fuel"),
             "block": response_data.get("block"),
-            "fuel": response_data.get("fuel")
+            "peripherals": response_data.get("peripherals")  # Returns it dynamically here!
         }
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Turtle took too long to respond")
     finally:
-        # Always clean up our tracker dictionary
         pending_responses.pop(worker_id, None)
 
 

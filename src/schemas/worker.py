@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -21,3 +22,4 @@ class Status(BaseModel):
     fuel: int | None = None
     inventory: dict | None = None
     block: dict | str | None = None
+    peripherals: dict | None = None  # <-- ADD THIS LINE

@@ -81,7 +81,7 @@ local function handle_command(data)
     elseif cmd == "suck_down" then
         return turtle.suckDown()
 
-    -- Drop (Fixed with tonumber)
+    -- Drop
     elseif cmd == "drop" then
         local drop_count = tonumber(data.count) or 64
         return turtle.drop(drop_count)
@@ -117,7 +117,7 @@ local function handle_command(data)
     elseif cmd == "place_down" then
         return turtle.placeDown()
 
-    -- Inventory (Fixed slot with tonumber)
+    -- Inventory
     elseif cmd == "select_slot" then
         local slot = tonumber(data.slot)
         if slot and slot >= 1 and slot <= 16 then
@@ -130,6 +130,17 @@ local function handle_command(data)
         return turtle.refuel()
     elseif cmd == "scan_inventory" then
         return true
+
+    -- Peripherals
+    elseif cmd == "scan_peripherals" then
+        local peripherals = {}
+        for _, side in ipairs({"left", "right", "top", "bottom", "front", "back"}) do
+            local p = peripheral.getType(side)
+            if p then
+                peripherals[side] = p
+            end
+        end
+        return true, peripherals
     end
 
     print("[TurtleNet] Unknown command: " .. tostring(cmd))
@@ -155,7 +166,7 @@ local function run()
                     local data = textutils.unserialiseJSON(msg)
 
                     if data then
-                        -- Reply to ping instead of ignoring it
+                        -- Active heartbeat response loop
                         if data.type == "ping" then
                             ws.send(textutils.serialiseJSON({
                                 status    = "ok",
@@ -164,9 +175,11 @@ local function run()
                             }))
                         elseif data.command then
                             print("[TurtleNet] Command: " .. data.command)
-                            local result = handle_command(data)
 
-                            -- FIXED: Safely process inspect data as a clean dictionary
+                            -- Capture both the success status and potential secondary return data
+                            local result, extra_data = handle_command(data)
+
+                            -- Safely convert string air errors into dictionary exceptions for Pydantic
                             local inspect_data = nil
                             if data.command == "inspect" then
                                 local success, block = turtle.inspect()
@@ -179,12 +192,14 @@ local function run()
                                 inspect_data = success and block or { error = block }
                             end
 
+                            -- Dispatches unified response back down the stream
                             ws.send(textutils.serialiseJSON({
-                                status    = result and "ok" or "failed",
-                                command   = data.command,
-                                fuel      = turtle.getFuelLevel(),
-                                inventory = get_inventory(),
-                                block     = inspect_data,
+                                status      = result and "ok" or "failed",
+                                command     = data.command,
+                                fuel        = turtle.getFuelLevel(),
+                                inventory   = get_inventory(),
+                                block       = inspect_data,
+                                peripherals = extra_data,
                             }))
                         end
                     end

@@ -20,9 +20,10 @@ def _save(data: dict) -> None:
         json.dump(data, f, indent=2, default=str)
 
 
-def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: dict = None, block: dict = None) -> Status:
-    data = _load()
-    worker = data.get(worker_id)
+def record_ping(self, worker_id: str, worker_type: str, fuel: int = None, inventory: dict = None, block: dict = None,
+                peripherals: dict = None):
+    workers = self._load_workers()
+    worker = workers.get(worker_id)
 
     if worker:
         worker["last_seen"] = datetime.now(timezone.utc).isoformat()
@@ -30,6 +31,7 @@ def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: d
         if fuel is not None: worker["fuel"] = fuel
         if inventory is not None: worker["inventory"] = inventory
         if block is not None: worker["block"] = block
+        if peripherals is not None: worker["peripherals"] = peripherals  # <-- ADD THIS LINE
     else:
         worker = {
             "worker_id": worker_id,
@@ -37,12 +39,13 @@ def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: d
             "last_seen": datetime.now(timezone.utc).isoformat(),
             "ping_count": 1,
             "fuel": fuel,
-            "inventory": inventory,
+            "inventory": inventory or {},
             "block": block,
+            "peripherals": peripherals or {},  # <-- ADD THIS LINE
         }
+        workers[worker_id] = worker
 
-    data[worker_id] = worker
-    _save(data)
+    self._save_workers(workers)
     return Status(**worker)
 
 
