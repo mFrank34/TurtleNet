@@ -1,10 +1,11 @@
+# Location: src/api/v1/endpoints/worker_ws.py
 import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 
+from core.commands import Inventory
 from schemas.worker import Command
 from services import worker_store
-from core.commands import Inventory
 
 router = APIRouter()
 connected_workers: dict[str, WebSocket] = {}
@@ -14,7 +15,7 @@ pending_responses: dict[str, tuple[asyncio.Event, dict]] = {}
 
 
 @router.websocket("/ws/{worker_id}")
-async def worker_ws(websocket: WebSocket, worker_id: str):
+async def worker_ws(websocket: WebSocket, worker_id: str):  # Keep this explicitly worker_ws
     await websocket.accept()
     connected_workers[worker_id] = websocket
     print(f"[TurtleNet] Worker {worker_id} connected socket successfully")

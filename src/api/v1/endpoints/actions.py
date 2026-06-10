@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from api.v1.endpoints.worker_ws import connected_workers, send_command
+from api.v1.endpoints.worker import connected_workers, send_command
 from schemas.actions import ActionRequest
 from services.actions import ACTIONS
 

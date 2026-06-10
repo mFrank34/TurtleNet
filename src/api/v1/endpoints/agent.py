@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from agents.registry import agent_registry
-from api.v1.endpoints.worker_ws import send_command, connected_workers
+from api.v1.endpoints.worker import send_command, connected_workers
 from schemas.agent import AgentResponse, StartAgentRequest
 from services.world_store import world_store
 
