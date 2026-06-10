@@ -203,13 +203,13 @@ async def move_and_scan(worker_id: str, send: SendCommand, args: dict = {}) -> d
 
 async def turn_left(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
     """Turn the worker left."""
-    result = await send(worker_id, Command(command=Move.LEFT))
+    result = await send(worker_id, Command(command=Move.TURN_LEFT))
     return {"ok": True} if result and result.get("status") == "ok" else {"ok": False, "error": "turn left failed"}
 
 
 async def turn_right(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
     """Turn the worker right."""
-    result = await send(worker_id, Command(command=Move.RIGHT))
+    result = await send(worker_id, Command(command=Move.TURN_RIGHT))
     return {"ok": True} if result and result.get("status") == "ok" else {"ok": False, "error": "turn right failed"}
 
 
