@@ -257,8 +257,9 @@ class BaseAgent(ABC):
 
     async def _turn_and_move(self, side: str) -> bool:
         """Turn left/right then move forward; undo turn if blocked."""
-        turn_cmd = Move.LEFT if side == "left" else Move.RIGHT
-        unturn_cmd = Move.RIGHT if side == "left" else Move.LEFT
+        # FIX: Update the attribute names to match core/commands.py exactly
+        turn_cmd = Move.TURN_LEFT if side == "left" else Move.TURN_RIGHT
+        unturn_cmd = Move.TURN_RIGHT if side == "left" else Move.TURN_LEFT
         heading_delta = -90 if side == "left" else 90
 
         # Turn
