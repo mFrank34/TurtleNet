@@ -58,39 +58,53 @@ async def worker_ws(websocket: WebSocket, worker_id: str):
         pending_responses.pop(worker_id, None)
 
 
+async def send_command(worker_id: str, cmd: Command) -> dict | None:
+    """
+    Shared send helper — used by both the command endpoint and actions.
+    Returns the turtle's response dict, or None on timeout/not connected.
+    """
+    ws = connected_workers.get(worker_id)
+    if not ws:
+        return None
+
+    event = asyncio.Event()
+    pending_responses[worker_id] = (event, {})
+
+    await ws.send_json({
+        "command": cmd.command,
+        "slot": cmd.slot,
+        "count": cmd.count,
+    })
+
+    try:
+        await asyncio.wait_for(event.wait(), timeout=5.0)
+        _, response_data = pending_responses[worker_id]
+        return response_data
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        pending_responses.pop(worker_id, None)
+
+
 @router.post("/{worker_id}/command")
 async def command_worker(worker_id: str, payload: Command):
     ws = connected_workers.get(worker_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Worker not connected")
 
-    event = asyncio.Event()
-    pending_responses[worker_id] = (event, {})
-
-    await ws.send_json({
-        "command": payload.command,
-        "slot": payload.slot,
-        "count": payload.count,
-    })
-
-    try:
-        await asyncio.wait_for(event.wait(), timeout=5.0)
-        _, response_data = pending_responses[worker_id]
-
-        return {
-            "sent": True,
-            "status": response_data.get("status"),
-            "command": response_data.get("command"),
-            "fuel": response_data.get("fuel"),
-            "block": response_data.get("block"),
-            "peripherals": response_data.get("peripherals"),
-            "location": response_data.get("location"),
-        }
-
-    except asyncio.TimeoutError:
+    response_data = await send_command(worker_id, payload)
+    if response_data is None:
         raise HTTPException(status_code=504, detail="Turtle took too long to respond")
-    finally:
-        pending_responses.pop(worker_id, None)
+
+    return {
+        "sent": True,
+        "status": response_data.get("status"),
+        "command": response_data.get("command"),
+        "fuel": response_data.get("fuel"),
+        "block": response_data.get("block"),
+        "peripherals": response_data.get("peripherals"),
+        "location": response_data.get("location"),
+    }
 
 
 @router.get("/{worker_id}/inventory")
@@ -103,22 +117,10 @@ async def get_inventory(worker_id: str):
             raise HTTPException(status_code=404, detail="Worker not found")
         return {"source": "cache_offline", "inventory": worker.inventory}
 
-    event = asyncio.Event()
-    pending_responses[worker_id] = (event, {})
+    response_data = await send_command(worker_id, Command(command="scan_inventory"))
 
-    await ws.send_json({
-        "command": "scan_inventory",
-        "slot": None,
-        "count": None,
-    })
-
-    try:
-        await asyncio.wait_for(event.wait(), timeout=5.0)
-        _, response_data = pending_responses[worker_id]
-        return {"source": "live_sync", "inventory": response_data.get("inventory")}
-
-    except asyncio.TimeoutError:
+    if response_data is None:
         worker = worker_store.get_worker(worker_id)
         return {"source": "cache_timeout", "inventory": worker.inventory if worker else {}}
-    finally:
-        pending_responses.pop(worker_id, None)
+
+    return {"source": "live_sync", "inventory": response_data.get("inventory")}
