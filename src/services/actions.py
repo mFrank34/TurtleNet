@@ -8,8 +8,10 @@ Add new actions as async functions and register them in ACTIONS at the bottom.
 """
 
 from __future__ import annotations
+
 from typing import Callable, Awaitable
 
+from core.commands import Move, Inspect, Equip, Inventory, GPS
 from schemas.worker import Command
 
 # Type alias for the send_command function passed in from the endpoint
@@ -18,7 +20,6 @@ SendCommand = Callable[[str, Command], Awaitable[dict | None]]
 MODEM_NAMES = (
     "computercraft:wireless_modem",
     "computercraft:wired_modem",
-    "advancedperipherals:end_automata",
     "modem",
 )
 
@@ -34,10 +35,28 @@ def _find_slot(inventory: dict, *keywords: str) -> int | None:
 
 async def _scan(worker_id: str, send: SendCommand) -> dict | None:
     """Scan inventory and return it, or None on failure."""
-    result = await send(worker_id, Command(command="scan_inventory"))
+    result = await send(worker_id, Command(command=Inventory.SCAN))
     if not result or result.get("status") != "ok":
         return None
     return result.get("inventory") or {}
+
+
+async def _find_and_select(worker_id: str, send: SendCommand, *keywords: str) -> tuple[int, str] | dict:
+    """Scan inventory, find item by keywords, select it. Returns (slot, name) or error dict."""
+    inventory = await _scan(worker_id, send)
+    if inventory is None:
+        return {"ok": False, "error": "inventory scan failed"}
+
+    slot = _find_slot(inventory, *keywords)
+    if slot is None:
+        return {"ok": False, "error": f"{keywords[0]} not found in inventory"}
+
+    result = await send(worker_id, Command(command=Inventory.SELECT, slot=slot))
+    if not result or result.get("status") != "ok":
+        return {"ok": False, "error": f"failed to select slot {slot}"}
+
+    name = inventory[str(slot)].get("name", keywords[0])
+    return slot, name
 
 
 async def get_gps_location(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
@@ -50,17 +69,17 @@ async def get_gps_location(worker_id: str, send: SendCommand, args: dict = {}) -
     if modem_slot is None:
         return {"ok": False, "error": "no modem found in inventory"}
 
-    if not (await send(worker_id, Command(command="select_slot", slot=modem_slot))):
+    if not (await send(worker_id, Command(command=Inventory.SELECT, slot=modem_slot))):
         return {"ok": False, "error": f"failed to select slot {modem_slot}"}
 
-    if not (await send(worker_id, Command(command="equip_left"))):
+    if not (await send(worker_id, Command(command=Equip.LEFT))):
         return {"ok": False, "error": "failed to equip modem"}
 
-    locate = await send(worker_id, Command(command="get_location"))
+    locate = await send(worker_id, Command(command=GPS.LOCATE))
     location = locate.get("location") if locate else None
 
     # always swap back regardless of GPS result
-    await send(worker_id, Command(command="equip_left"))
+    await send(worker_id, Command(command=Equip.LEFT))
 
     if not location:
         return {"ok": False, "error": "modem equipped but no GPS signal"}
@@ -78,8 +97,8 @@ async def auto_refuel(worker_id: str, send: SendCommand, args: dict = {}) -> dic
     if fuel_slot is None:
         return {"ok": False, "error": "no fuel found in inventory"}
 
-    await send(worker_id, Command(command="select_slot", slot=fuel_slot))
-    result = await send(worker_id, Command(command="refuel"))
+    await send(worker_id, Command(command=Inventory.SELECT, slot=fuel_slot))
+    result = await send(worker_id, Command(command=Inventory.REFUEL))
 
     if not result or result.get("status") != "ok":
         return {"ok": False, "error": "refuel failed"}
@@ -93,21 +112,50 @@ async def equip_item(worker_id: str, send: SendCommand, args: dict = {}) -> dict
     if not item_name:
         return {"ok": False, "error": "no item specified — pass args.item"}
 
-    inventory = await _scan(worker_id, send)
-    if inventory is None:
-        return {"ok": False, "error": "inventory scan failed"}
+    result = await _find_and_select(worker_id, send, item_name.lower())
+    if isinstance(result, dict):
+        return result
 
-    item_slot = _find_slot(inventory, item_name.lower())
-    if item_slot is None:
-        return {"ok": False, "error": f"{item_name} not found in inventory"}
-
-    await send(worker_id, Command(command="select_slot", slot=item_slot))
-    result = await send(worker_id, Command(command="equip_left"))
-
-    if not result or result.get("status") != "ok":
+    slot, name = result
+    equip = await send(worker_id, Command(command=Equip.LEFT))
+    if not equip or equip.get("status") != "ok":
         return {"ok": False, "error": "equip failed"}
 
-    return {"ok": True, "equipped": item_name}
+    return {"ok": True, "equipped": name}
+
+
+async def select_block(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
+    """Find a block by name in inventory and select its slot."""
+    block_name = args.get("block")
+    if not block_name:
+        return {"ok": False, "error": "no block specified — pass args.block"}
+
+    result = await _find_and_select(worker_id, send, block_name.lower())
+    if isinstance(result, dict):
+        return result
+
+    slot, name = result
+    return {"ok": True, "block": name, "slot": slot}
+
+
+async def move_and_scan(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
+    """Move forward then inspect up, middle and down."""
+    move = await send(worker_id, Command(command=Move.FORWARD))
+    if not move or move.get("status") != "ok":
+        return {"ok": False, "error": "move failed — path blocked?"}
+
+    up = await send(worker_id, Command(command=Inspect.UP))
+    forward = await send(worker_id, Command(command=Inspect.FORWARD))
+    down = await send(worker_id, Command(command=Inspect.DOWN))
+
+    return {
+        "ok": True,
+        "blocks": {
+            "up": up.get("block") if up else None,
+            "forward": forward.get("block") if forward else None,
+            "down": down.get("block") if down else None,
+        }
+    }
 
 
 # Registry — add new actions here
@@ -115,4 +163,6 @@ ACTIONS: dict[str, Callable] = {
     "get_gps_location": get_gps_location,
     "auto_refuel": auto_refuel,
     "equip_item": equip_item,
+    "select_block": select_block,
+    "move_and_scan": move_and_scan,
 }

@@ -4,6 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 
 from schemas.worker import Command
 from services import worker_store
+from core.commands import Inventory
 
 router = APIRouter()
 connected_workers: dict[str, WebSocket] = {}
@@ -117,7 +118,7 @@ async def get_inventory(worker_id: str):
             raise HTTPException(status_code=404, detail="Worker not found")
         return {"source": "cache_offline", "inventory": worker.inventory}
 
-    response_data = await send_command(worker_id, Command(command="scan_inventory"))
+    response_data = await send_command(worker_id, Command(command=Inventory.SCAN))
 
     if response_data is None:
         worker = worker_store.get_worker(worker_id)
