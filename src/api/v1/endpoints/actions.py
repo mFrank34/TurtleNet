@@ -1,15 +1,10 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
-from services.actions import ACTIONS
 from api.v1.endpoints.worker_ws import connected_workers, send_command
+from schemas.actions import ActionRequest
+from services.actions import ACTIONS
 
 router = APIRouter()
-
-
-class ActionRequest(BaseModel):
-    action: str
-    args: dict = {}
 
 
 @router.post("/{worker_id}/action")
