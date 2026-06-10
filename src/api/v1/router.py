@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 
 from api.v1.endpoints import worker_ws
-from api.v1.endpoints import actions
+from api.v1.endpoints.actions import router as actions_router
 
 router = APIRouter()
 
 router.include_router(worker_ws.router, prefix="/workers", tags=["workers"])
-router.include_router(actions, prefix="/workers", tags=["actions"])
+router.include_router(actions_router, prefix="/workers", tags=["actions"])
