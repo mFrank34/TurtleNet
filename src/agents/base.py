@@ -198,13 +198,32 @@ class BaseAgent(ABC):
         """
         result = await self.send(self.worker_id, Command(command=Inventory.SCAN))
         if result and result.get("status") == "ok":
-            # Worker status pings include fuel_level; grab it if present
-            fuel = result.get("fuel_level")
+            # FIX: Check both fuel_level and fuel to account for different schema variants
+            fuel = result.get("fuel_level") if result.get("fuel_level") is not None else result.get("fuel")
             if fuel is not None:
                 try:
                     self.fuel_level = int(fuel)
                 except (TypeError, ValueError):
                     pass
+
+        # FIX: If we have zero fuel, force an emergency refuel immediately before proceeding
+        if self.fuel_level is not None and self.fuel_level == 0:
+            logger.info(f"[{self.worker_id}] Critical: 0 fuel detected! Forcing immediate emergency refuel.")
+            prev_state = self.state
+            self.state = AgentState.RECOVERING
+
+            result = await run_action(self.worker_id, self.send, "auto_refuel")
+            if result.get("ok"):
+                # Update our tracking with the new level returned by auto_refuel
+                self.fuel_level = int(result.get("fuel", 0))
+                logger.info(f"[{self.worker_id}] Emergency refuel successful. New fuel: {self.fuel_level}")
+            else:
+                self.last_error = "emergency refuel failed: " + result.get("error", "unknown")
+                logger.error(f"[{self.worker_id}] {self.last_error}")
+                self.state = AgentState.ERROR
+
+            self.state = prev_state
+            return
 
         if self.fuel_level is None:
             return
