@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from schemas.worker import Status
+from schemas.worker import Status, Location
 
 STORE_PATH = Path("data/workers.json")
 
@@ -20,10 +20,16 @@ def _save(data: dict) -> None:
         json.dump(data, f, indent=2, default=str)
 
 
-# FIXED: Removed 'self' and swapped internal calls to match _load() and _save()
-def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: dict = None, block: dict = None,
-                peripherals: dict = None):
-    workers = _load()  # FIXED: matches function name above
+def record_ping(
+    worker_id: str,
+    worker_type: str,
+    fuel: int = None,
+    inventory: dict = None,
+    block: dict = None,
+    peripherals: dict = None,
+    location: dict = None,
+):
+    workers = _load()
     worker = workers.get(worker_id)
 
     if worker:
@@ -33,6 +39,7 @@ def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: d
         if inventory is not None: worker["inventory"] = inventory
         if block is not None: worker["block"] = block
         if peripherals is not None: worker["peripherals"] = peripherals
+        if location is not None: worker["location"] = location
     else:
         worker = {
             "worker_id": worker_id,
@@ -43,10 +50,11 @@ def record_ping(worker_id: str, worker_type: str, fuel: int = None, inventory: d
             "inventory": inventory or {},
             "block": block,
             "peripherals": peripherals or {},
+            "location": location,
         }
         workers[worker_id] = worker
 
-    _save(workers)  # FIXED: matches function name above
+    _save(workers)
     return Status(**worker)
 
 

@@ -1,5 +1,4 @@
 from datetime import datetime
-
 from pydantic import BaseModel
 
 
@@ -14,6 +13,12 @@ class Command(BaseModel):
     count: int | None = None
 
 
+class Location(BaseModel):
+    x: float
+    y: float
+    z: float
+
+
 class Status(BaseModel):
     worker_id: str
     worker_type: str
@@ -22,4 +27,5 @@ class Status(BaseModel):
     fuel: int | None = None
     inventory: dict | None = None
     block: dict | str | None = None
-    peripherals: dict | None = None  # <-- ADD THIS LINE
+    peripherals: dict | None = None
+    location: Location | None = None
