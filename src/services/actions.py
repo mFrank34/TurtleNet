@@ -201,6 +201,18 @@ async def move_and_scan(worker_id: str, send: SendCommand, args: dict = {}) -> d
     }
 
 
+async def turn_left(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
+    """Turn the worker left."""
+    result = await send(worker_id, Command(command=Move.LEFT))
+    return {"ok": True} if result and result.get("status") == "ok" else {"ok": False, "error": "turn left failed"}
+
+
+async def turn_right(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
+    """Turn the worker right."""
+    result = await send(worker_id, Command(command=Move.RIGHT))
+    return {"ok": True} if result and result.get("status") == "ok" else {"ok": False, "error": "turn right failed"}
+
+
 # Registry — add new actions here
 ACTIONS: dict[str, Callable] = {
     "get_gps_location": get_gps_location,
@@ -208,5 +220,7 @@ ACTIONS: dict[str, Callable] = {
     "equip_item": equip_item,
     "select_block": select_block,
     "move_and_scan": move_and_scan,
-    "verify_move_forward": verify_move_forward,  # Registered new action
+    "verify_move_forward": verify_move_forward,
+    "turn_left": turn_left,
+    "turn_right": turn_right,
 }
