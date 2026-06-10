@@ -138,18 +138,61 @@ async def select_block(worker_id: str, send: SendCommand, args: dict = {}) -> di
     return {"ok": True, "block": name, "slot": slot}
 
 
-async def move_and_scan(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
-    """Move forward then inspect up, middle and down."""
+async def verify_move_forward(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
+    """
+    Moves the worker forward and verifies if its GPS position actually changed.
+    Returns a dict with verification status and positions.
+    """
+    # 1. Get initial position
+    initial_gps = await get_gps_location(worker_id, send, args)
+    if not initial_gps.get("ok"):
+        return {"ok": False, "error": f"Initial GPS failed: {initial_gps.get('error')}"}
+    pos1 = initial_gps["location"]
+
+    # 2. Attempt to move forward
     move = await send(worker_id, Command(command=Move.FORWARD))
     if not move or move.get("status") != "ok":
-        return {"ok": False, "error": "move failed — path blocked?"}
+        return {"ok": False, "error": "move forward command rejected or blocked"}
 
+    # 3. Get post-move position
+    post_gps = await get_gps_location(worker_id, send, args)
+    if not post_gps.get("ok"):
+        return {"ok": False, "error": f"Post-move GPS failed: {post_gps.get('error')}"}
+    pos2 = post_gps["location"]
+
+    # 4. Calculate coordinate deltas
+    dx = pos2["x"] - pos1["x"]
+    dy = pos2["y"] - pos1["y"]
+    dz = pos2["z"] - pos1["z"]
+
+    moved = (abs(dx) + abs(dy) + abs(dz)) == 1
+
+    if not moved:
+        return {"ok": False, "error": "Move command executed, but GPS position did not change."}
+
+    return {
+        "ok": True,
+        "current_position": pos2,
+        "delta": {"x": dx, "y": dy, "z": dz}
+    }
+
+
+async def move_and_scan(worker_id: str, send: SendCommand, args: dict = {}) -> dict:
+    """Move forward (verified via GPS) then inspect up, middle and down."""
+    # Call the verification function to handle the movement step
+    move_result = await verify_move_forward(worker_id, send, args)
+    if not move_result.get("ok"):
+        return move_result  # Return early if movement or GPS verification failed
+
+    # Perform environmental scans since we confirmed we moved successfully
     up = await send(worker_id, Command(command=Inspect.UP))
     forward = await send(worker_id, Command(command=Inspect.FORWARD))
     down = await send(worker_id, Command(command=Inspect.DOWN))
 
     return {
         "ok": True,
+        "location": move_result["current_position"],
+        "delta": move_result["delta"],
         "blocks": {
             "up": up.get("block") if up else None,
             "forward": forward.get("block") if forward else None,
@@ -165,4 +208,5 @@ ACTIONS: dict[str, Callable] = {
     "equip_item": equip_item,
     "select_block": select_block,
     "move_and_scan": move_and_scan,
+    "verify_move_forward": verify_move_forward,  # Registered new action
 }
