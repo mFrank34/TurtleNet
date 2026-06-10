@@ -2,7 +2,7 @@
 Wander Agent — explores the world, preferring unscanned territory.
 
 Each tick:
-  1. Choose best direction toward nearest unscanned area (random fallback)
+  1. Choose the best direction toward nearest unscanned area (random fallback)
   2. Call move_and_scan action — moves forward AND scans in one round trip
   3. If blocked, try escape_obstacle then retry
   4. Write scanned blocks to world_store
