@@ -126,3 +126,15 @@ async def get_inventory(worker_id: str):
         return {"source": "cache_timeout", "inventory": worker.inventory if worker else {}}
 
     return {"source": "live_sync", "inventory": response_data.get("inventory")}
+
+
+@router.get("/")
+async def list_workers():
+    return [
+        {
+            "worker_id": worker_id,
+            "fuel": worker_store.get_worker(worker_id).fuel if worker_store.get_worker(worker_id) else None,
+            "location": worker_store.get_worker(worker_id).location if worker_store.get_worker(worker_id) else None,
+        }
+        for worker_id in connected_workers
+    ]
