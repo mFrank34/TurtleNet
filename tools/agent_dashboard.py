@@ -3,24 +3,27 @@ TurtleNet Fleet Monitor + Control
 Location: tools/fleet_dashboard.py
 
 Keybinds:
-    ↑ / ↓       Select turtle
+    Tab         Switch focus between Workers / Agents table
+    ↑ / ↓       Select row
+    A           Assign agent to selected worker (opens picker)
     S           Stop selected agent
-    A           Start wander on selected
-    P           Pause selected
-    R           Resume selected
+    P           Pause selected agent
+    R           Resume selected agent
+    X           Stop ALL agents
     Ctrl+C      Quit
 
 Requires:
-    pip install rich
+    pip install rich readchar
 """
 
 import argparse
 import json
+import threading
 import time
-import urllib.error
 import urllib.request
 
 from rich import box
+from rich.columns import Columns
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
@@ -38,6 +41,8 @@ DEFAULT_HOST = "192.168.10.2"
 DEFAULT_PORT = 8000
 DEFAULT_INTERVAL = 1.0
 
+AVAILABLE_AGENTS = ["wander"]  # extend as you add more agent types
+
 STATE_STYLES = {
     "RUNNING": "bold green",
     "RECOVERING": "bold yellow",
@@ -45,13 +50,16 @@ STATE_STYLES = {
     "STOPPED": "dim white",
     "ERROR": "bold red",
     "IDLE": "dim white",
-    "NO AGENT": "dim white",
+    "NO AGENT": "dim",
 }
+
+FOCUS_WORKERS = 0
+FOCUS_AGENTS = 1
 
 
 # ── API helpers ───────────────────────────────────────────────────────────────
 
-def fetch_json(url: str, timeout: float = 2.0):
+def fetch_json(url: str, timeout: float = 2.0) -> dict | list:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return json.loads(r.read())
@@ -72,62 +80,74 @@ def api_call(method: str, url: str, body: dict | None = None, timeout: float = 3
         return {"_error": str(e)}
 
 
-def fetch_fleet(host: str, port: int) -> tuple[list[dict], str | None]:
-    base = f"http://{host}:{port}/api/v1"
-    data = fetch_json(f"{base}/agents")
-    if "_error" in data:
+def fetch_workers(host: str, port: int) -> tuple[list[dict], str | None]:
+    data = fetch_json(f"http://{host}:{port}/api/v1/workers/")
+    if isinstance(data, dict) and "_error" in data:
         return [], data["_error"]
+    workers = data if isinstance(data, list) else data.get("workers", [])
+    rows = []
+    for w in workers:
+        rows.append({
+            "id": w.get("worker_id") or w.get("id", "?"),
+            "fuel": w.get("fuel"),
+            "location": w.get("location"),
+        })
+    rows.sort(key=lambda r: r["id"])
+    return rows, None
 
+
+def fetch_agents(host: str, port: int) -> tuple[list[dict], str | None]:
+    data = fetch_json(f"http://{host}:{port}/api/v1/agents")
+    if isinstance(data, dict) and "_error" in data:
+        return [], data["_error"]
     running = data.get("running", {})
     rows = []
     for worker_id, status in running.items():
         extra = status.get("extra", {})
         position = extra.get("position") or status.get("position")
         rows.append({
-            "id": worker_id.upper(),
+            "id": worker_id,
             "state": (status.get("state") or "UNKNOWN").upper(),
             "agent_type": (status.get("agent_type") or "-").upper(),
             "ticks": status.get("ticks", 0),
             "position": position,
             "last_error": status.get("last_error") or extra.get("last_error"),
         })
-
     rows.sort(key=lambda r: r["id"])
     return rows, None
 
 
-# ── Control actions ───────────────────────────────────────────────────────────
+# ── Control ───────────────────────────────────────────────────────────────────
 
-def agent_stop(host: str, port: int, worker_id: str) -> str:
-    r = api_call("DELETE", f"http://{host}:{port}/api/v1/workers/{worker_id}/agent")
-    return "stopped" if r.get("ok") else r.get("_error") or r.get("detail", "failed")
+def agent_stop(host, port, wid):
+    r = api_call("DELETE", f"http://{host}:{port}/api/v1/workers/{wid}/agent")
+    return "stopped" if r.get("ok") else r.get("detail") or r.get("_error", "failed")
 
 
-def agent_start(host: str, port: int, worker_id: str, agent: str = "wander") -> str:
-    r = api_call("POST", f"http://{host}:{port}/api/v1/workers/{worker_id}/agent",
+def agent_start(host, port, wid, agent="wander"):
+    r = api_call("POST", f"http://{host}:{port}/api/v1/workers/{wid}/agent",
                  {"agent": agent, "args": {}})
-    return "started" if r.get("ok") else r.get("_error") or r.get("detail", "failed")
+    return f"{agent} started" if r.get("ok") else r.get("detail") or r.get("_error", "failed")
 
 
-def agent_pause(host: str, port: int, worker_id: str) -> str:
-    r = api_call("POST", f"http://{host}:{port}/api/v1/workers/{worker_id}/agent/pause")
-    return "paused" if r.get("ok") else r.get("_error") or r.get("detail", "failed")
+def agent_pause(host, port, wid):
+    r = api_call("POST", f"http://{host}:{port}/api/v1/workers/{wid}/agent/pause")
+    return "paused" if r.get("ok") else r.get("detail") or r.get("_error", "failed")
 
 
-def agent_resume(host: str, port: int, worker_id: str) -> str:
-    r = api_call("POST", f"http://{host}:{port}/api/v1/workers/{worker_id}/agent/resume")
-    return "resumed" if r.get("ok") else r.get("_error") or r.get("detail", "failed")
+def agent_resume(host, port, wid):
+    r = api_call("POST", f"http://{host}:{port}/api/v1/workers/{wid}/agent/resume")
+    return "resumed" if r.get("ok") else r.get("detail") or r.get("_error", "failed")
 
 
-def agent_stop_all(host: str, port: int, rows: list[dict]) -> str:
-    results = [agent_stop(host, port, r["id"]) for r in rows]
-    ok = sum(1 for r in results if r == "stopped")
-    return f"stopped {ok}/{len(rows)}"
+def agent_stop_all(host, port, agent_rows):
+    ok = sum(1 for r in agent_rows if agent_stop(host, port, r["id"]) == "stopped")
+    return f"stopped {ok}/{len(agent_rows)}"
 
 
 # ── Rendering ─────────────────────────────────────────────────────────────────
 
-def fmt_position(pos) -> Text:
+def fmt_pos(pos) -> Text:
     if not pos:
         return Text("unknown", style="dim")
     try:
@@ -136,92 +156,139 @@ def fmt_position(pos) -> Text:
         return Text(str(pos), style="dim")
 
 
-def fmt_error(err: str | None) -> Text:
+def fmt_fuel(fuel) -> Text:
+    if fuel is None:
+        return Text("?", style="dim")
+    low = isinstance(fuel, (int, float)) and fuel < 160
+    return Text(str(fuel), style="bold red" if low else "white")
+
+
+def fmt_error(err) -> Text:
     if not err:
         return Text("")
     err = err.replace("emergency refuel failed: ", "")
-    return Text(err[:50], style="red")
+    return Text(err[:45], style="red")
 
 
-def build_table(
-        rows: list[dict],
-        error: str | None,
-        last_update: str,
-        selected: int,
-        status_msg: str,
-        host: str,
-        port: int,
-) -> Panel:
-    table = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style="bold white",
-        pad_edge=False,
-        expand=True,
-    )
+def build_workers_table(rows: list[dict], selected: int, focused: bool) -> Panel:
+    t = Table(box=box.SIMPLE_HEAD, show_header=True,
+              header_style="bold white", pad_edge=False, expand=True)
+    t.add_column("", min_width=2)
+    t.add_column("ID", style="bold white", min_width=12)
+    t.add_column("FUEL", justify="right", min_width=8)
+    t.add_column("POSITION (X, Y, Z)", min_width=22)
 
-    table.add_column("", min_width=2)  # selector
-    table.add_column("ID", style="bold white", min_width=12)
-    table.add_column("AGENT", style="white", min_width=10)
-    table.add_column("STATE", min_width=12)
-    table.add_column("TICKS", justify="right", min_width=7)
-    table.add_column("POSITION (X, Y, Z)", min_width=22)
-    table.add_column("LAST ERROR", min_width=20)
-
-    if error:
-        table.add_row("", Text(f"⚠  Cannot reach API: {error}", style="bold red"),
-                      "", "", "", "", "")
-    elif not rows:
-        table.add_row("", Text("No agents running.", style="dim"), "", "", "", "", "")
+    if not rows:
+        t.add_row("", Text("No workers connected.", style="dim"), "", "")
     else:
         for i, r in enumerate(rows):
-            is_sel = i == selected
-            cursor = Text("▶", style="bold cyan") if is_sel else Text(" ")
-            state = r["state"]
-            style = STATE_STYLES.get(state, "white")
-            id_text = Text(r["id"], style="bold cyan" if is_sel else "bold white")
+            is_sel = focused and i == selected
+            t.add_row(
+                Text("▶", style="bold cyan") if is_sel else Text(" "),
+                Text(r["id"], style="bold cyan" if is_sel else "bold white"),
+                fmt_fuel(r["fuel"]),
+                fmt_pos(r["location"]),
+            )
 
-            table.add_row(
-                cursor,
-                id_text,
+    border = "cyan" if focused else "bright_black"
+    hint = "  [dim]A[/dim] assign agent" if focused else ""
+    return Panel(t, title="[bold white]WORKERS[/bold white]" + hint,
+                 border_style=border, padding=(0, 1))
+
+
+def build_agents_table(rows: list[dict], selected: int, focused: bool) -> Panel:
+    t = Table(box=box.SIMPLE_HEAD, show_header=True,
+              header_style="bold white", pad_edge=False, expand=True)
+    t.add_column("", min_width=2)
+    t.add_column("ID", style="bold white", min_width=12)
+    t.add_column("AGENT", style="white", min_width=10)
+    t.add_column("STATE", min_width=12)
+    t.add_column("TICKS", justify="right", min_width=7)
+    t.add_column("POSITION (X, Y, Z)", min_width=22)
+    t.add_column("LAST ERROR", min_width=20)
+
+    if not rows:
+        t.add_row("", Text("No agents running.", style="dim"), "", "", "", "", "")
+    else:
+        for i, r in enumerate(rows):
+            is_sel = focused and i == selected
+            state = r["state"]
+            t.add_row(
+                Text("▶", style="bold cyan") if is_sel else Text(" "),
+                Text(r["id"], style="bold cyan" if is_sel else "bold white"),
                 r["agent_type"],
-                Text(state, style=style),
+                Text(state, style=STATE_STYLES.get(state, "white")),
                 Text(str(r["ticks"]), style="dim"),
-                fmt_position(r["position"]),
+                fmt_pos(r["position"]),
                 fmt_error(r.get("last_error")),
             )
 
-    # Controls footer line
-    if HAS_READCHAR:
-        controls = "[cyan]↑↓[/cyan] Select  [cyan]S[/cyan] Stop  [cyan]A[/cyan] Start wander  [cyan]P[/cyan] Pause  [cyan]R[/cyan] Resume  [cyan]X[/cyan] Stop all  [cyan]Ctrl+C[/cyan] Quit"
-    else:
-        controls = "[dim]Install readchar for keyboard control:  pip install readchar[/dim]"
+    border = "cyan" if focused else "bright_black"
+    hint = "  [dim]S[/dim] stop  [dim]P[/dim] pause  [dim]R[/dim] resume  [dim]X[/dim] stop all" if focused else ""
+    return Panel(t, title="[bold white]AGENTS[/bold white]" + hint,
+                 border_style=border, padding=(0, 1))
 
-    if status_msg:
-        controls = f"[bold green]{status_msg}[/bold green]   " + controls
+
+def build_picker(worker_id: str, agents: list[str], selected: int) -> Panel:
+    t = Table(box=box.SIMPLE_HEAD, show_header=False, pad_edge=False)
+    t.add_column("", min_width=2)
+    t.add_column("AGENT", style="white", min_width=16)
+
+    for i, name in enumerate(agents):
+        is_sel = i == selected
+        t.add_row(
+            Text("▶", style="bold cyan") if is_sel else Text(" "),
+            Text(name.upper(), style="bold cyan" if is_sel else "white"),
+        )
+
+    return Panel(t,
+                 title=f"[bold white]Assign agent to {worker_id}[/bold white]",
+                 subtitle="[dim]↑↓ select   Enter confirm   Esc cancel[/dim]",
+                 border_style="cyan", padding=(0, 1))
+
+
+def build_screen(
+        workers, agents, worker_err, agent_err,
+        focus, w_sel, a_sel,
+        picking, pick_sel,
+        status_msg, last_update, host, port,
+) -> Panel:
+    workers_panel = build_workers_table(workers, w_sel, focus == FOCUS_WORKERS)
+    agents_panel = build_agents_table(agents, a_sel, focus == FOCUS_AGENTS)
+
+    if picking and workers:
+        wid = workers[w_sel]["id"]
+        bottom = build_picker(wid, AVAILABLE_AGENTS, pick_sel)
+    else:
+        bottom = agents_panel
+
+    status = f"[bold green]{status_msg}[/bold green]   " if status_msg else ""
+    tab_hint = "[dim]Tab[/dim] switch table   [dim]Ctrl+C[/dim] quit"
+    err_hint = ""
+    if worker_err:
+        err_hint = f"  [red]workers: {worker_err[:40]}[/red]"
+    if agent_err:
+        err_hint += f"  [red]agents: {agent_err[:40]}[/red]"
 
     return Panel(
-        table,
-        title=f"[bold white]🐢  TURTLENET FLEET MONITOR[/bold white]  [dim]{host}:{port}[/dim]",
-        subtitle=f"{controls}\n[dim]Updated: {last_update}[/dim]",
+        Columns([workers_panel, bottom], expand=True),
+        title="[bold white]🐢  TURTLENET FLEET MONITOR[/bold white]"
+              f"  [dim]{host}:{port}[/dim]",
+        subtitle=f"{status}{tab_hint}{err_hint}\n[dim]Updated: {last_update}[/dim]",
         border_style="bright_black",
     )
 
 
 # ── Input thread ──────────────────────────────────────────────────────────────
 
-import threading
-
-
 class InputHandler:
     def __init__(self):
-        self.key: str | None = None
+        self.key = None
         self._lock = threading.Lock()
         if HAS_READCHAR:
-            t = threading.Thread(target=self._read_loop, daemon=True)
-            t.start()
+            threading.Thread(target=self._loop, daemon=True).start()
 
-    def _read_loop(self):
+    def _loop(self):
         while True:
             try:
                 k = readchar.readkey()
@@ -230,10 +297,9 @@ class InputHandler:
             except Exception:
                 break
 
-    def consume(self) -> str | None:
+    def consume(self):
         with self._lock:
-            k = self.key
-            self.key = None
+            k, self.key = self.key, None
             return k
 
 
@@ -247,18 +313,22 @@ def main():
     args = parser.parse_args()
 
     console = Console()
-    rows: list = []
-    error = None
+    workers = []
+    agents = []
+    worker_err = None
+    agent_err = None
     last_upd = "never"
-    selected = 0
-    status_msg = ""
-    status_ttl = 0  # ticks until status_msg clears
-    input_hdlr = InputHandler()
-    next_poll = 0.0
 
-    if not HAS_READCHAR:
-        console.print("[yellow]Tip: install readchar for keyboard control → pip install readchar[/yellow]")
-        time.sleep(1.5)
+    focus = FOCUS_WORKERS
+    w_sel = 0
+    a_sel = 0
+    picking = False  # agent picker open
+    pick_sel = 0
+
+    status_msg = ""
+    status_ttl = 0
+    next_poll = 0.0
+    input_hdlr = InputHandler()
 
     with Live(console=console, refresh_per_second=8, screen=True) as live:
         try:
@@ -267,63 +337,97 @@ def main():
 
                 # ── Poll API ──
                 if now >= next_poll:
-                    rows, error = fetch_fleet(args.host, args.port)
+                    workers, worker_err = fetch_workers(args.host, args.port)
+                    agents, agent_err = fetch_agents(args.host, args.port)
                     last_upd = time.strftime("%H:%M:%S")
                     next_poll = now + args.interval
-                    # Keep selection in bounds
-                    if rows:
-                        selected = min(selected, len(rows) - 1)
+                    w_sel = min(w_sel, max(0, len(workers) - 1))
+                    a_sel = min(a_sel, max(0, len(agents) - 1))
 
                 # ── Handle input ──
                 key = input_hdlr.consume()
-                if key and rows:
-                    wid = rows[selected]["id"]
+                if key:
+                    UP = readchar.key.UP if HAS_READCHAR else None
+                    DOWN = readchar.key.DOWN if HAS_READCHAR else None
+                    ENTER = readchar.key.ENTER if HAS_READCHAR else None
+                    ESC = readchar.key.ESC if HAS_READCHAR else None
 
-                    if key == readchar.key.UP:
-                        selected = max(0, selected - 1)
+                    # ── Picker mode ──
+                    if picking:
+                        if key == UP:
+                            pick_sel = max(0, pick_sel - 1)
+                        elif key == DOWN:
+                            pick_sel = min(len(AVAILABLE_AGENTS) - 1, pick_sel + 1)
+                        elif key == ENTER and workers:
+                            wid = workers[w_sel]["id"]
+                            agent_name = AVAILABLE_AGENTS[pick_sel]
+                            result = agent_start(args.host, args.port, wid, agent_name)
+                            status_msg = f"{wid}: {result}"
+                            status_ttl = 6
+                            picking = False
+                            next_poll = 0
+                        elif key == ESC:
+                            picking = False
 
-                    elif key == readchar.key.DOWN:
-                        selected = min(len(rows) - 1, selected + 1)
+                    # ── Normal mode ──
+                    else:
+                        if key == "\t":
+                            focus = FOCUS_AGENTS if focus == FOCUS_WORKERS else FOCUS_WORKERS
 
-                    elif key in ("s", "S"):
-                        result = agent_stop(args.host, args.port, wid)
-                        status_msg = f"{wid}: {result}"
-                        status_ttl = 5
-                        next_poll = 0  # force refresh
+                        elif key == UP:
+                            if focus == FOCUS_WORKERS:
+                                w_sel = max(0, w_sel - 1)
+                            else:
+                                a_sel = max(0, a_sel - 1)
 
-                    elif key in ("a", "A"):
-                        result = agent_start(args.host, args.port, wid)
-                        status_msg = f"{wid}: {result}"
-                        status_ttl = 5
-                        next_poll = 0
+                        elif key == DOWN:
+                            if focus == FOCUS_WORKERS:
+                                w_sel = min(max(0, len(workers) - 1), w_sel + 1)
+                            else:
+                                a_sel = min(max(0, len(agents) - 1), a_sel + 1)
 
-                    elif key in ("p", "P"):
-                        result = agent_pause(args.host, args.port, wid)
-                        status_msg = f"{wid}: {result}"
-                        status_ttl = 5
-                        next_poll = 0
+                        elif key in ("a", "A") and focus == FOCUS_WORKERS and workers:
+                            picking = True
+                            pick_sel = 0
 
-                    elif key in ("r", "R"):
-                        result = agent_resume(args.host, args.port, wid)
-                        status_msg = f"{wid}: {result}"
-                        status_ttl = 5
-                        next_poll = 0
+                        elif key in ("s", "S") and focus == FOCUS_AGENTS and agents:
+                            wid = agents[a_sel]["id"]
+                            result = agent_stop(args.host, args.port, wid)
+                            status_msg = f"{wid}: {result}"
+                            status_ttl = 6
+                            next_poll = 0
 
-                    elif key in ("x", "X"):
-                        result = agent_stop_all(args.host, args.port, rows)
-                        status_msg = result
-                        status_ttl = 5
-                        next_poll = 0
+                        elif key in ("p", "P") and focus == FOCUS_AGENTS and agents:
+                            wid = agents[a_sel]["id"]
+                            result = agent_pause(args.host, args.port, wid)
+                            status_msg = f"{wid}: {result}"
+                            status_ttl = 6
+                            next_poll = 0
 
-                # Clear status message after N redraws
+                        elif key in ("r", "R") and focus == FOCUS_AGENTS and agents:
+                            wid = agents[a_sel]["id"]
+                            result = agent_resume(args.host, args.port, wid)
+                            status_msg = f"{wid}: {result}"
+                            status_ttl = 6
+                            next_poll = 0
+
+                        elif key in ("x", "X"):
+                            result = agent_stop_all(args.host, args.port, agents)
+                            status_msg = result
+                            status_ttl = 6
+                            next_poll = 0
+
+                # Clear status
                 if status_ttl > 0:
                     status_ttl -= 1
                 else:
                     status_msg = ""
 
-                live.update(build_table(
-                    rows, error, last_upd, selected,
-                    status_msg, args.host, args.port,
+                live.update(build_screen(
+                    workers, agents, worker_err, agent_err,
+                    focus, w_sel, a_sel,
+                    picking, pick_sel,
+                    status_msg, last_upd, args.host, args.port,
                 ))
                 time.sleep(0.12)
 

@@ -2,14 +2,13 @@
 Wander Agent — explores the world, preferring unscanned territory.
 
 Each tick:
-  1. Choose the best direction toward nearest unscanned area (random fallback)
+  1. Choose best direction toward nearest unscanned area (random fallback)
   2. Call move_and_scan action — moves forward AND scans in one round trip
   3. If blocked, try escape_obstacle then retry
   4. Write scanned blocks to world_store
   5. Re-sync GPS every GPS_SYNC_INTERVAL ticks to correct drift
 
-Note: move_and_scan moves forward only, so left/right/up/down are handled
-as plain moves (no scan) when navigating toward unscanned areas.
+Vertical bias: strongly prefers moving down over up to avoid floating into sky.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ import random
 from typing import Optional
 
 from agents.base import BaseAgent, SendCommand, run_action, HEADING_OFFSETS
-
 from services.world_store import world_store
 
 logger = logging.getLogger(__name__)
@@ -43,17 +41,14 @@ class WanderAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def tick(self) -> bool:
-        # Periodically re-anchor via real GPS to correct dead-reckoning drift
         if self.ticks > 0 and self.ticks % GPS_SYNC_INTERVAL == 0:
             await self.sync_gps()
 
         direction = self._choose_direction()
 
         if direction == "forward":
-            # move_and_scan moves forward and scans surroundings in one action
             moved = await self._move_and_scan()
         else:
-            # For any non-forward direction, just move (facing will change heading)
             moved = await self.move(direction)
 
         if not moved:
@@ -61,33 +56,26 @@ class WanderAgent(BaseAgent):
             if not escaped:
                 logger.warning(f"[{self.worker_id}] Fully stuck, waiting 2s")
                 await asyncio.sleep(2)
-                return True  # keep running — something may unblock
 
-        self.steps_taken += 1
-        self.last_direction = direction
-        return True  # wander runs until explicitly stopped
+        if moved:
+            self.steps_taken += 1
+            self.last_direction = direction
+
+        return True
 
     # ------------------------------------------------------------------
     # move_and_scan wrapper
     # ------------------------------------------------------------------
 
     async def _move_and_scan(self) -> bool:
-        """
-        Call the move_and_scan action. It moves forward, verifies via GPS,
-        and returns scanned blocks + confirmed position.
-        Returns True if move succeeded.
-        """
         result = await run_action(self.worker_id, self.send, "move_and_scan")
 
         if not result.get("ok"):
-            # move_and_scan returns ok=False when movement was blocked
             return False
 
-        # Update our position from the GPS-verified location in the result
         if result.get("location"):
             self.position = result["location"]
 
-        # Write scanned blocks to world store
         blocks = result.get("blocks", {})
         if blocks and self.position:
             self.cells_scanned += len(blocks)
@@ -103,54 +91,57 @@ class WanderAgent(BaseAgent):
         return True
 
     # ------------------------------------------------------------------
-    # Direction selection — prefer unscanned neighbours
+    # Direction selection — prefer unscanned neighbours, bias downward
     # ------------------------------------------------------------------
 
     def _choose_direction(self) -> str:
-        """
-        Pick the best next direction.
-        - If we know our position, aim toward the nearest unscanned cell.
-        - Otherwise fall back to weighted random (avoid repeating last direction).
-        """
         if self.position is not None:
             unscanned = world_store.find_unscanned_neighbours(
                 (self.position["x"], self.position["y"], self.position["z"]),
                 radius=6,
             )
             if unscanned:
-                # Pick from nearest 5 to avoid always beelining the same spot
                 target = random.choice(unscanned[:5])
                 direction = self._direction_toward(target)
                 if direction:
                     return direction
 
-        # Weighted random — down-weight last direction to reduce backtracking
-        horizontal = ["forward", "left", "right", "back"]
-        weights = [
-            1 if d == self.last_direction else 3
-            for d in horizontal
-        ]
-        return random.choices(horizontal, weights=weights, k=1)[0]
+        # Weighted random fallback:
+        #   up   = 1  (strongly avoid — ends up in sky)
+        #   down = 4  (bias downward — explore underground)
+        #   horizontal = 3 each
+        #   repeat last direction = 1 (avoid backtracking)
+        directions = ["forward", "left", "right", "back", "down", "up"]
+        weights = []
+        for d in directions:
+            if d == self.last_direction:
+                weights.append(1)
+            elif d == "up":
+                weights.append(1)
+            elif d == "down":
+                weights.append(4)
+            else:
+                weights.append(3)
+        return random.choices(directions, weights=weights, k=1)[0]
 
     def _direction_toward(self, target: tuple[int, int, int]) -> Optional[str]:
-        """
-        Return the relative direction (forward/back/left/right/up/down)
-        that moves closest to target given the current heading.
-        """
         if self.position is None:
             return None
 
-        tx, ty, tz = target
-        px = self.position["x"]
-        py = self.position["y"]
-        pz = self.position["z"]
-        dx, dy, dz = tx - px, ty - py, tz - pz
+        dx = target[0] - self.position["x"]
+        dy = target[1] - self.position["y"]
+        dz = target[2] - self.position["z"]
 
-        # Go vertical first if the Y gap is dominant
-        if abs(dy) > max(abs(dx), abs(dz)):
-            return "up" if dy > 0 else "down"
+        # Only go UP if target is massively above and horizontal gap is tiny
+        # High multiplier means horizontal movement is strongly preferred over up
+        if dy > 0 and abs(dy) > max(abs(dx), abs(dz)) * 2:
+            return "up"
 
-        # Project world delta onto our current facing axes
+        # Go DOWN readily — target just needs to be below and somewhat dominant
+        if dy < 0 and abs(dy) > max(abs(dx), abs(dz)):
+            return "down"
+
+        # Otherwise stay horizontal
         fwd_dx, _, fwd_dz = HEADING_OFFSETS[self.heading]
         right_dx, _, right_dz = HEADING_OFFSETS[(self.heading + 90) % 360]
 
@@ -163,7 +154,7 @@ class WanderAgent(BaseAgent):
             return "right" if right_dot >= 0 else "left"
 
     # ------------------------------------------------------------------
-    # Status extras
+    # Status
     # ------------------------------------------------------------------
 
     def _extra_status(self) -> dict:
